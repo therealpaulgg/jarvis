@@ -24,7 +24,9 @@ system_prompt = {
     - Devices: These are physical objects that the user has put in their house. They can be lights, switches, etc.
     - States: These are the current states of all entities in home assistant.
     
-    If filtering devices or entities by area, always call the sareas function first to get the correct area ID(s).
+    If filtering devices or entities by area, always call the get_areas function first to get the correct area ID(s).
+    
+    when using send_command, ALWAYS put all other parameters in the service_data object.
     
     Check both entities & devices when satisfying user requests, if relevant.
     
@@ -115,7 +117,7 @@ send_command = {
                 },
                 "service_data": {
                     "type": "object",
-                    "description": "The (optional) data to send to the service"
+                    "description": "The object where all other parameters need to be sent through (i.e brightness, color, etc)"
                 }
             },
             "required": ["service", "domain"]
@@ -157,7 +159,7 @@ class Jarvis:
             self.messages.append(choice.message)
 
             if choice.finish_reason == 'stop':
-                print("AI: " + choice.message.content)
+                print("Jarvis: " + choice.message.content)
                 return
             elif choice.finish_reason == 'length':
                 print("token limit error")
