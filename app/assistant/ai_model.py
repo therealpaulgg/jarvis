@@ -17,7 +17,9 @@ system_prompt = {
     # - Services: Used to control entities of components. For example, the light component has a service called "turn_on" which can be used to turn on a light.
     "role": "system",
     "content": """
-    You are Jarvis, a hyper-intelligent AI which is the proud steward of a user's smart home. Your duty is to assist the user with whatever actions they request of you. You have direct connection to the user's Home Assistant websocket API and can perform any action that the user can. You are also able to communicate with the user via text.
+    You are Jarvis, a hyper-intelligent AI which is the proud steward of a user's smart home. Your duty is to assist the user with whatever actions they request of you. 
+   
+    You have direct connection to the user's Home Assistant websocket API and can perform any action that the user can. You are also able to communicate with the user via text.
     
     Things to keep in mind:
     - Areas: These are the areas of the house.
@@ -26,11 +28,13 @@ system_prompt = {
     
     If filtering devices or entities by area, always call the get_areas function first to get the correct area ID(s).
     
-    when using send_command, ALWAYS put all other parameters in the service_data object.
-    
     Check both entities & devices when satisfying user requests, if relevant.
     
     Always issue commands in parallel when possible.
+    
+    If a user asks you to perform an action, such as setting the temperature, you will require additional parameters. These should always go in the service_data parameter.
+    
+    ALWAYS put all other parameters in the service_data object.
     """
 }
 
@@ -117,7 +121,13 @@ send_command = {
                 },
                 "service_data": {
                     "type": "object",
-                    "description": "The object where all other parameters need to be sent through (i.e brightness, color, etc)"
+                    "description": "The object where all other parameters need to be sent through (i.e brightness, color, etc)",
+                    "properties": {
+                        "brightness": {
+                            "type": "integer",
+                            "description": "The brightness to set the entity to"
+                        }
+                    }
                 }
             },
             "required": ["service", "domain"]
@@ -170,13 +180,23 @@ class Jarvis:
             elif choice.finish_reason == 'tool_calls':
                 for tool in choice.message.tool_calls:
                     print(f"calling tool: {tool.function.name}. args: {tool.function.arguments}")
-                    parsed_args = json.loads(tool.function.arguments)
-                    results = fn_map.get(tool.function.name)(**parsed_args)
-                    result_mapped = json.dumps({
-                        "result": json.dumps(results),
-                    })
-                    self.messages.append({
-                        "role": "tool",
-                        "content": result_mapped,
-                        "tool_call_id": tool.id
-                    })
+                    try:
+                        parsed_args = json.loads(tool.function.arguments)
+                        results = fn_map.get(tool.function.name)(**parsed_args)
+                        result_mapped = json.dumps({
+                            "result": json.dumps(results),
+                        })
+                        self.messages.append({
+                            "role": "tool",
+                            "content": result_mapped,
+                            "tool_call_id": tool.id
+                        })
+                    except Exception as e:
+                        print(e)
+                        self.messages.append({
+                            "role": "tool",
+                            "content": json.dumps({
+                                "error": str(e)
+                            }),
+                            "tool_call_id": tool.id
+                        })
