@@ -1,53 +1,91 @@
-import requests
-
-# https://developers.home-assistant.io/docs/api/rest/
-
-# PROBLEM: home assistant doesnt support 'areas' yet, so we cant get all the lights in a room
-# just kidding, we can use the websockets API To do this. config/area_registry/list
-# do this later
+import json
+import websocket
 
 class HomeAssistantInterface:
     def __init__(self, base_url, access_token):
-        self.base_url = base_url
-        self.headers = {
-            "Authorization": f"Bearer {access_token}",
-            "content-type": "application/json",
-        }
-        
-    def get_states(self):
-        """ Get all the states in Home Assistant. """
-        url = f"{self.base_url}/api/states"
+        self.ws_url = base_url.replace('http', 'ws') + "/api/websocket"
+        self.access_token = access_token
 
-        response = requests.get(url, headers=self.headers)
-        response
-        return response
+    def _send_message(self, message_type, additional_payload=None):
+        """ Send a message over WebSocket and return the response. """
+        ws = websocket.create_connection(self.ws_url)
+        try:
+            response = json.loads(ws.recv())  # Server requests auth
+            # Authenticate
+            ws.send(json.dumps({
+                "type": "auth",
+                "access_token": self.access_token
+            }))
+            
+            response = json.loads(ws.recv())  # Auth response
+
+            if response["type"] != "auth_ok":
+                raise ConnectionError("Failed to authenticate with Home Assistant.")
+
+            # Prepare and send the message
+            message_id = 1  # In a more complex app, manage unique IDs dynamically
+            message = {
+                "id": message_id,
+                "type": message_type
+            }
+            if additional_payload:
+                message.update(additional_payload)
+
+            ws.send(json.dumps(message))
+
+            # Receive and return the response
+            while True:
+                response = json.loads(ws.recv())
+                if response["id"] == message_id:
+                    return response
+        except Exception as e:
+            raise e
+        finally:
+            ws.close()
+
+    def get_areas(self):
+        """ Get all areas from Home Assistant. """
+        areas = self._send_message("config/area_registry/list") 
+        return areas
     
+    def get_devices(self, by_area=None):
+        """ Get all devices from Home Assistant. """
+        devices = self._send_message("config/device_registry/list")
+        if by_area is not None:
+            devices['result'] = [device for device in devices['result'] if device['area_id'] == by_area]
+        return devices
+    
+    def get_entities(self, by_area=None):
+        """ Get all areas from Home Assistant. """
+        entities = self._send_message("config/entity_registry/list")
+        if by_area is not None:
+            entities['result'] = [entity for entity in entities['result'] if entity['area_id'] == by_area]
+        return entities
+
+    def get_states(self):
+        """ Get all entity states from Home Assistant. """
+        states = self._send_message("get_states")
+        # minify response
+        states["result"] = list(map(lambda state: {
+            "entity_id": state["entity_id"],
+            "state": state["state"]
+        }, states["result"]))
+        return states
+
     def get_services(self):
-        """ Get all the services in Home Assistant. """
-        url = f"{self.base_url}/api/services"
+        """ Get all services from Home Assistant. """
+        services = self._send_message("get_services")
+        return services
+    
+    def send_command(self, domain, service, entity_id=None, service_data=None):
+        """ Send a command to Home Assistant """
+        additional_payload = {
+            "domain": domain,
+            "service": service
+        }
+        if service_data:
+            additional_payload["service_data"] = service_data
+        if entity_id:
+            additional_payload["target"] = {"entity_id": entity_id}
 
-        response = requests.get(url, headers=self.headers)
-        return response
-
-    def send_command(self, domain, service, entity_id, data=None):
-        """ Send a command to a Home Assistant entity. """
-        url = f"{self.base_url}/api/services/{domain}/{service}"
-
-        payload = {"entity_id": entity_id}
-        if data:
-            payload.update(data)
-
-        response = requests.post(url, headers=self.headers, json=payload)
-        return response
-
-    # Example function to turn on a light
-    def turn_on_light(self, entity_id):
-        service = "light/turn_on"
-        return self.send_command(service, entity_id)
-
-    # Example function to turn off a light
-    def turn_off_light(self, entity_id):
-        service = "light/turn_off"
-        return self.send_command(service, entity_id)
-
-    # Add more functions for other types of commands
+        return self._send_message("call_service", additional_payload)
