@@ -7,7 +7,7 @@ from ha_interface import HomeAssistantInterface
 load_dotenv()
 access_token = os.getenv("ACCESS_TOKEN")
 
-ha = HomeAssistantInterface("https://homeassistant.paulgg.int", access_token)
+ha = HomeAssistantInterface(os.getenv("HOME_ASSISTANT_URL"), access_token)
 
 client = OpenAI()
 
